@@ -4,6 +4,8 @@ import uvicorn
 from contextlib import asynccontextmanager
 
 from common.middleware import CustomMiddleware
+from event.routes import event_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,7 +34,7 @@ def read_root():
     return {"message": "Welcome to the Event Management System!"}
 
 # Include Routes
-# app.include_router(event_router, prefix="/api")
+app.include_router(event_router)
 
 
 if __name__ == "__main__":
