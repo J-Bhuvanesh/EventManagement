@@ -1,11 +1,15 @@
+from typing import Optional
+from fastapi import Query
+
 from fastapi import APIRouter
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,date
 
 from common.config import Config
 from common.response import APIResponse
+from event.models import EventStatusEnum
 from event.schemas import EventCreate, EventUpdate, AttendeeCreate
-from event.views import create_event, update_event, register_attendee
+from event.views import create_event, update_event, register_attendee, list_events
 from sqlalchemy.ext.asyncio import AsyncSession
 from common.db import get_db
 from fastapi import Depends
@@ -37,6 +41,14 @@ async def register_attendee_api(
     return await register_attendee(attendee_data, db)
 
 
+@event_router.get("/")
+async def get_event_api(
+    status: Optional[EventStatusEnum] = Query(None),
+    location: Optional[str] = Query(None),
+    date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    return await list_events(status=status, location=location, date=date, db=db)
 
 
 @event_router.get("/generate-guest-token")

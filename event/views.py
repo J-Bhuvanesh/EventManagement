@@ -1,10 +1,14 @@
+from typing import Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from common.response import APIResponse
-from event.models import Event, Registration, User
+from event.models import Event, Registration, User, EventStatusEnum
 from event.schemas import EventCreate, EventUpdate, AttendeeCreate
 from sqlalchemy import select, func
-
+from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
+from datetime import datetime, date
+
 
 
 async def create_event(event: EventCreate, db: AsyncSession):
@@ -139,3 +143,42 @@ async def register_attendee(attendee_data: AttendeeCreate, db: AsyncSession):
     except Exception as e:
         await db.rollback()
         return APIResponse.failure(message="Failed to register attendee", data={"error": str(e)})
+
+
+async def list_events(status: Optional[EventStatusEnum], location: Optional[str], date: Optional[date], db: AsyncSession):
+    try:
+        query = select(Event)
+
+        filters = []
+        if status:
+            filters.append(Event.status == status)
+        if location:
+            filters.append(Event.location == location)
+        if date:
+            filters.append(
+                and_(
+                    Event.start_time <= datetime.combine(date, datetime.max.time()),
+                    Event.end_time >= datetime.combine(date, datetime.min.time())
+                )
+            )
+
+        if filters:
+            query = query.where(and_(*filters))
+
+        result = await db.execute(query)
+        events = result.scalars().all()
+
+        return APIResponse.success(
+            message="Filtered events fetched successfully",
+            data=[{
+                "event_id": e.event_id,
+                "name": e.name,
+                "start_time": e.start_time.isoformat() if e.start_time else None,
+                "end_time": e.end_time.isoformat() if e.end_time else None,
+                "location": e.location,
+                "status": e.status
+            } for e in events]
+        )
+
+    except Exception as e:
+        return APIResponse.failure(message="Failed to list events", data={"error": str(e)})
