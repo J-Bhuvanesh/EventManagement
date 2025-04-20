@@ -27,3 +27,11 @@ class EventUpdate(BaseModel):
     location: Optional[str]
     max_attendees: Optional[int]
     status: Optional[EventStatusEnum]
+
+
+class AttendeeCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone_number: str
+    event_id: int

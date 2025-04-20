@@ -1,7 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from event.models import Event
 from common.response import APIResponse
-from event.schemas import EventCreate
+from event.models import Event, Registration, User
+from event.schemas import EventCreate, EventUpdate, AttendeeCreate
+from sqlalchemy import select, func
+
+from sqlalchemy.exc import IntegrityError
 
 
 async def create_event(event: EventCreate, db: AsyncSession):
@@ -28,3 +31,111 @@ async def create_event(event: EventCreate, db: AsyncSession):
 
     except Exception as e:
         return APIResponse.failure(message="Failed to create event", data={"error": str(e)})
+
+
+async def update_event(event_id: int, update_data: EventUpdate, db: AsyncSession):
+    try:
+        result = await db.execute(select(Event).where(Event.event_id == event_id))
+        event = result.scalars().first()
+
+        if not event:
+            return APIResponse.failure(message="Event not found", status_code=404)
+
+        if update_data.end_time and update_data.start_time and update_data.end_time <= update_data.start_time:
+            return APIResponse.failure(message="End time must be after start time.", status_code=400)
+
+        for field, value in update_data.dict(exclude_unset=True).items():
+            setattr(event, field, value)
+
+        await db.commit()
+        await db.refresh(event)
+
+        return APIResponse.success(message="Event updated successfully", data={"event_id": event.event_id})
+
+    except Exception as e:
+        return APIResponse.failure(message="Failed to update event", data={"error": str(e)})
+
+async def update_event(event_id: int, update_data: EventUpdate, db: AsyncSession):
+    try:
+        result = await db.execute(select(Event).where(Event.event_id == event_id))
+        event = result.scalars().first()
+
+        if not event:
+            return APIResponse.failure(message="Event not found", status_code=404)
+
+        if update_data.end_time and update_data.start_time and update_data.end_time <= update_data.start_time:
+            return APIResponse.failure(message="End time must be after start time.", status_code=400)
+
+        for field, value in update_data.dict(exclude_unset=True).items():
+            setattr(event, field, value)
+
+        await db.commit()
+        await db.refresh(event)
+
+        return APIResponse.success(message="Event updated successfully", data={"event_id": event.event_id})
+
+    except Exception as e:
+        return APIResponse.failure(message="Failed to update event", data={"error": str(e)})
+
+
+
+async def register_attendee(attendee_data: AttendeeCreate, db: AsyncSession):
+    try:
+        # 1. Fetch Event
+        result = await db.execute(select(Event).where(Event.event_id == attendee_data.event_id))
+        event = result.scalars().first()
+
+        if not event:
+            return APIResponse.failure(message="Event not found", status_code=404)
+        if event.status == "completed":
+            return APIResponse.failure(message="Event already completed", status_code=400)
+
+        # 2. Check max attendees limit
+        reg_count_result = await db.execute(
+            select(func.count()).select_from(Registration).where(Registration.event_id == attendee_data.event_id)
+        )
+        if reg_count_result.scalar_one() >= event.max_attendees:
+            return APIResponse.failure(message="Max attendee limit reached", status_code=400)
+
+        # 3. Check or Create User
+        user_result = await db.execute(select(User).where(User.email == attendee_data.email))
+        user = user_result.scalars().first()
+
+        if not user:
+            user = User(
+                first_name=attendee_data.first_name,
+                last_name=attendee_data.last_name,
+                email=attendee_data.email,
+                phone_number=attendee_data.phone_number
+            )
+            db.add(user)
+            await db.flush()  # Ensure user_id is available
+
+        # 4. Check duplicate registration
+        existing = await db.execute(
+            select(Registration).where(
+                Registration.user_id == user.user_id,
+                Registration.event_id == attendee_data.event_id
+            )
+        )
+        if existing.scalars().first():
+            return APIResponse.failure(message="User already registered for this event", status_code=400)
+
+        # 5. Create Registration
+        registration = Registration(
+            user_id=user.user_id,
+            event_id=attendee_data.event_id,
+            check_in_status=False
+        )
+        db.add(registration)
+        await db.commit()
+        await db.refresh(registration)
+
+        return APIResponse.success(message="User registered successfully", data={"registration_id": registration.registration_id})
+
+    except IntegrityError as e:
+        await db.rollback()
+        return APIResponse.failure(message="Integrity error", data={"error": str(e)}, status_code=400)
+    except Exception as e:
+        await db.rollback()
+        return APIResponse.failure(message="Failed to register attendee", data={"error": str(e)})
