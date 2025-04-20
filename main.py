@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
+
 from common.middleware import CustomMiddleware
 
 @asynccontextmanager
